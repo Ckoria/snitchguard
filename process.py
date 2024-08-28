@@ -1,91 +1,63 @@
 import streamlit as st
 import cv2
-import face_recognition
 import numpy as np
-from twilio.rest import Client
+from deepface import DeepFace
 import os
 
-# Load authorized faces
-def load_and_encode_faces(folder_path='authorised_faces'):
-    encoded_faces = []
-    face_names = []
+# Initialize Streamlit app
+st.title("SnitchGuard - Real-time Face Recognition")
 
-    for file_name in os.listdir(folder_path):
-        image = face_recognition.load_image_file(os.path.join(folder_path, file_name))
-        encoding = face_recognition.face_encodings(image)[0]
-        encoded_faces.append(encoding)
-        face_names.append(os.path.splitext(file_name)[0])
+# Sidebar for settings
+st.sidebar.title("Settings")
+model_name = st.sidebar.selectbox("Choose Face Recognition Model", ["VGG-Face", "Facenet", "OpenFace", "DeepID", "Dlib"])
 
-    return encoded_faces, face_names
+# Placeholder for displaying video
+frame_window = st.image([])
 
-encoded_faces, face_names = load_and_encode_faces()
+# Access the webcam (0 is the default webcam)
+cap = cv2.VideoCapture(0)
 
-def identify_faces(encoded_faces, face_names):
-    st.title("SnitchGuard: AI-Powered Security System")
+# Function to detect and recognize faces
+def detect_faces(frame, authorized_faces_encodings):
+    # Convert frame to RGB (OpenCV uses BGR by default)
+    rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+
+    try:
+        # DeepFace verification to identify faces
+        result = DeepFace.find(img_path=rgb_frame, db_path="authorised_faces", model_name=model_name, enforce_detection=False)
+        return result
+    except Exception as e:
+        st.error(f"Error in face recognition: {e}")
+        return None
+
+# Load authorized faces into memory (optional: replace with your own authorized faces folder)
+authorized_faces_folder = "authorised_faces"
+if not os.path.exists(authorized_faces_folder):
+    os.makedirs(authorized_faces_folder)
+
+authorized_faces_encodings = {}
+
+# Process video frames from the webcam
+while cap.isOpened():
+    ret, frame = cap.read()
+    if not ret:
+        st.error("Failed to read from webcam.")
+        break
     
-    # Start capturing from the webcam
-    video_capture = cv2.VideoCapture(0)
+    # Display the current frame
+    frame_window.image(frame, channels="BGR")
 
-    while True:
-        ret, frame = video_capture.read()
-        if not ret:
-            break
+    # Perform face recognition
+    result = detect_faces(frame, authorized_faces_encodings)
 
-        # Resize frame for faster processing
-        small_frame = cv2.resize(frame, (0, 0), fx=0.25, fy=0.25)
-        rgb_small_frame = small_frame[:, :, ::-1]
+    # Display result
+    if result:
+        st.write("Unauthorized access detected!" if len(result) > 0 else "Access granted.")
 
-        # Detect faces and find encodings
-        face_locations = face_recognition.face_locations(rgb_small_frame)
-        face_encodings = face_recognition.face_encodings(rgb_small_frame, face_locations)
+    # Break loop if 'q' key is pressed
+    if cv2.waitKey(1) & 0xFF == ord('q'):
+        break
 
-        # Check if faces are recognized
-        for face_encoding in face_encodings:
-            matches = face_recognition.compare_faces(encoded_faces, face_encoding)
-            name = "Unknown"
-
-            face_distances = face_recognition.face_distance(encoded_faces, face_encoding)
-            best_match_index = np.argmin(face_distances)
-            if matches[best_match_index]:
-                name = face_names[best_match_index]
-            else:
-                send_whatsapp_notification()
-
-            # Display results
-            st.write(f"Detected: {name}")
-
-        # Display the resulting frame in Streamlit
-        st.image(frame, channels="BGR")
-
-    video_capture.release()
-    cv2.destroyAllWindows()
-
-
-# Set up Twilio client
-TWILIO_ACCOUNT_SID = 'your_account_sid'
-TWILIO_AUTH_TOKEN = 'your_auth_token'
-WHATSAPP_FROM = 'whatsapp:+your_twilio_number'
-WHATSAPP_TO = 'whatsapp:+recipient_number'
-
-client = Client(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN)
-
-def send_whatsapp_notification():
-    message = client.messages.create(
-        body="Unauthorized access detected!",
-        from_=WHATSAPP_FROM,
-        to=WHATSAPP_TO
-    )
-    st.write("Notification sent to WhatsApp!")
-
-
-def main():
-    st.sidebar.title("SnitchGuard Settings")
-    st.sidebar.write("Authorized Persons:")
-    for name in face_names:
-        st.sidebar.write(name)
-
-    if st.sidebar.button("Start Monitoring"):
-        identify_faces(encoded_faces, face_names)
-
-if __name__ == "__main__":
-    main()
+# Release the webcam and close all OpenCV windows
+cap.release()
+cv2.destroyAllWindows()
