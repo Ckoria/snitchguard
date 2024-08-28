@@ -59,3 +59,33 @@ def identify_faces(encoded_faces, face_names):
 
     video_capture.release()
     cv2.destroyAllWindows()
+
+
+# Set up Twilio client
+TWILIO_ACCOUNT_SID = 'your_account_sid'
+TWILIO_AUTH_TOKEN = 'your_auth_token'
+WHATSAPP_FROM = 'whatsapp:+your_twilio_number'
+WHATSAPP_TO = 'whatsapp:+recipient_number'
+
+client = Client(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN)
+
+def send_whatsapp_notification():
+    message = client.messages.create(
+        body="Unauthorized access detected!",
+        from_=WHATSAPP_FROM,
+        to=WHATSAPP_TO
+    )
+    st.write("Notification sent to WhatsApp!")
+
+
+def main():
+    st.sidebar.title("SnitchGuard Settings")
+    st.sidebar.write("Authorized Persons:")
+    for name in face_names:
+        st.sidebar.write(name)
+
+    if st.sidebar.button("Start Monitoring"):
+        identify_faces(encoded_faces, face_names)
+
+if __name__ == "__main__":
+    main()
