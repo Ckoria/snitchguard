@@ -1,63 +1,60 @@
-import streamlit as st
 import cv2
-import numpy as np
 from deepface import DeepFace
-import os
+from twilio.rest import Client
+import time
+from notification import send_whatsapp_notification
+# Load authorized images and create embeddings
+authorized_faces = ["authorised_faces/IMG_20240323_154409.jpg", 
+                    "authorised_faces/IMG_20240308_144954.jpg", 
+                    "authorised_faces/IMG_20220924_202946.jpg"]
+authorized_embeddings = []
 
-# Initialize Streamlit app
-st.title("SnitchGuard - Real-time Face Recognition")
+for face in authorized_faces:
+    embedding = DeepFace.represent(face, model_name='VGG-Face')
+    authorized_embeddings.append(embedding)
 
-# Sidebar for settings
-st.sidebar.title("Settings")
-model_name = st.sidebar.selectbox("Choose Face Recognition Model", ["VGG-Face", "Facenet", "OpenFace", "DeepID", "Dlib"])
-
-# Placeholder for displaying video
-frame_window = st.image([])
-
-# Access the webcam (0 is the default webcam)
-cap = cv2.VideoCapture(0)
-
-# Function to detect and recognize faces
-def detect_faces(frame, authorized_faces_encodings):
-    # Convert frame to RGB (OpenCV uses BGR by default)
-    rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-
+# Function to check if the face is authorized
+def is_authorized_face(frame):
     try:
-        # DeepFace verification to identify faces
-        result = DeepFace.find(img_path=rgb_frame, db_path="authorised_faces", model_name=model_name, enforce_detection=False)
-        return result
+        # Get embedding for current frame face
+        result = DeepFace.find(frame, db_path="authorised_faces/", model_name='VGG-Face')
+        return len(result) > 0  # Return True if face is found in the database
     except Exception as e:
-        st.error(f"Error in face recognition: {e}")
-        return None
+        print(f"Error in face recognition: {e}")
+        return False
 
-# Load authorized faces into memory (optional: replace with your own authorized faces folder)
-authorized_faces_folder = "authorised_faces"
-if not os.path.exists(authorized_faces_folder):
-    os.makedirs(authorized_faces_folder)
+# Initialize webcam
+cap = cv2.VideoCapture(1)
 
-authorized_faces_encodings = {}
+if not cap.isOpened():
+    print("Error: Could not open webcam.")
+    exit()
 
-# Process video frames from the webcam
-while cap.isOpened():
+while True:
+    # Capture frame-by-frame
     ret, frame = cap.read()
     if not ret:
-        st.error("Failed to read from webcam.")
+        print("Error: Failed to capture image.")
         break
-    
-    # Display the current frame
-    frame_window.image(frame, channels="BGR")
 
     # Perform face recognition
-    result = detect_faces(frame, authorized_faces_encodings)
+    authorized = is_authorized_face(frame)
+    
+    # If the face is not authorized, send a notification
+    if not authorized:
+        print("Unauthorized face detected!")
+        # Call notification function
+        # send_whatsapp_notification()
+        # Wait for some time before checking again to avoid spam
+        time.sleep(10)
 
-    # Display result
-    if result:
-        st.write("Unauthorized access detected!" if len(result) > 0 else "Access granted.")
+    # Display the frame
+    cv2.imshow("Webcam", frame)
 
-    # Break loop if 'q' key is pressed
+    # Press 'q' to quit
     if cv2.waitKey(1) & 0xFF == ord('q'):
         break
 
-# Release the webcam and close all OpenCV windows
+# When everything is done, release the capture
 cap.release()
 cv2.destroyAllWindows()
