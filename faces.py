@@ -4,6 +4,7 @@ import face_recognition
 import os
 from report import write_to_csv
 from notification import send_sms
+import time
 
 def read_authorised_faces(path: str) -> list:
     """
@@ -24,7 +25,7 @@ def convert_img_colors(authorised_faces: list) -> list:
     Returns:
         list : Processed images with corrected color 
     """
-    # authorised_faces = read_authorised_faces('authorised_faces')
+    authorised_faces = read_authorised_faces('authorised_faces')
     # Returns list comprehension of converted colors
     processed_images = [cv2.cvtColor(cv2.imread(
             f'./authorised_faces/{face}'), cv2.COLOR_BGR2RGB)
@@ -67,10 +68,8 @@ def read_camera(camera_on, encoded_images) -> None:
     if camera_on.isOpened():
         success, image = camera_on.read()
         image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-        print(success)
         face_frame = face_recognition.face_locations(image)
         face_encodes = face_recognition.face_encodings(image, face_frame)  
-        print(face_encodes)
         match_faces(face_frame, face_encodes, encoded_images, image)
         
 
@@ -84,8 +83,8 @@ def match_faces(face_frame, face_encodes, encoded_images, image) -> None:
     for encode_face, face_loc in zip(face_encodes, face_frame):
         match = face_recognition.compare_faces(encoded_images, encode_face)
         face_distance = face_recognition.face_distance(encoded_images, encode_face)
-        print(face_distance)
-        match_name(face_distance, match, face_loc, image)
+        if len(face_distance) > 0:
+            match_name(face_distance, match, face_loc, image)
   
         
 def match_name(face_distance, match, face_loc, image):
@@ -100,26 +99,34 @@ def match_name(face_distance, match, face_loc, image):
     match_idx = np.argmin(face_distance)
     authorised_faces = read_authorised_faces("authorised_faces")
     authorised_names = image_names(authorised_faces)
-    print(match)
-    print(match_idx)
+    no_of_tries = 0
     if match[match_idx]:
         name = authorised_names[match_idx].title()
-        y1, x2, y2, x1 = face_loc
-        cv2.rectangle(image, (x1, y1), (x2, y2),(0,255,0),2)
-        cv2.rectangle(image, (x1, y2-35), (x2, y2),(0,255,0), cv2.FILLED)
-        cv2.putText(image, name,(x1+6, y2-6), cv2.FONT_HERSHEY_COMPLEX, 1, (0,255,255), 2)
+        draw_rectangle(image, face_loc, name, True)
+        write_to_csv(name)
+        time.sleep(20)
     else:
         name = 'UNKOWN'
-        y1, x2, y2, x1 = face_loc
-        cv2.rectangle(image, (x1, y1), (x2, y2),(255,0,0),2)
-        cv2.rectangle(image, (x1, y2-35), (x2, y2),(255,0,0), cv2.FILLED) # Name tag
-        cv2.putText(image, name,(x1+6, y2-6), cv2.FONT_HERSHEY_COMPLEX, 1, (255,255,255), 2)
-        send_sms()
+        draw_rectangle(image, face_loc, name, False)
+        cv2.imshow('Caught on Cam', image)
+        if(no_of_tries > 3):
+            send_sms()
+            no_of_tries = -1
+        write_to_csv(name)
+        time.sleep(20)
+    no_of_tries += 1
     
-    write_to_csv(name)
+    
     cv2.imshow('Webcam', image)
     cv2.waitKey(1)
     
+def draw_rectangle(image, face_loc, name, authorized):
+    """Draws rectangles and labels around detected faces."""
+    y1, x2, y2, x1 = face_loc
+    color = (0, 255, 0) if authorized else (255, 0, 0)
+    cv2.rectangle(image, (x1, y1), (x2, y2), color, 2)
+    cv2.rectangle(image, (x1, y2 - 35), (x2, y2), color, cv2.FILLED)
+    cv2.putText(image, name, (x1 + 6, y2 - 6), cv2.FONT_HERSHEY_COMPLEX, 1, (255, 255, 255), 2)
         
         
 
